@@ -119,11 +119,6 @@ class SbtBuild private (buildRoot: File, client: SbtClient) extends HasLogger {
   }
 
   def projects(): Future[immutable.Seq[ProjectReference]] = {
-    val promise = Promise[immutable.Seq[ProjectReference]]
-    client.watchBuild {
-      case build: MinimalBuildStructure =>
-        promise.success(build.projects.toList)
-    }
-    promise.future
+    build.map(_.projects.to[immutable.Seq])
   }
 }
