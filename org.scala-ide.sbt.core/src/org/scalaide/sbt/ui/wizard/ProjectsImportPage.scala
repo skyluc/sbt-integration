@@ -57,6 +57,8 @@ import org.eclipse.core.resources.IResource
 import org.eclipse.core.resources.IProjectDescription
 import org.eclipse.core.resources.IWorkspace
 import scala.tools.eclipse.ScalaPlugin
+import org.eclipse.jdt.ui.PreferenceConstants
+import org.eclipse.jdt.core.JavaCore
 
 object ProjectsImportPage {
 
@@ -435,7 +437,7 @@ class ProjectsImportPage(currentSelection: IStructuredSelection) extends WizardD
     val project = workspace.getRoot().getProject(projectName)
     project.create(configureProjectDescription(record, workspace), IResource.NONE, monitor)
     project.open(monitor)
-    configureProject(project)
+    configureProject(project, monitor)
     project
   }
 
@@ -454,9 +456,10 @@ class ProjectsImportPage(currentSelection: IStructuredSelection) extends WizardD
     description
   }
 
-  def configureProject(project: IProject) {
-//    val scalaProject = ScalaPlugin.plugin.getScalaProject(project)
-
+  def configureProject(project: IProject, monitor: IProgressMonitor) {
+    val javaProject = JavaCore.create(project)
+    // For some reason, using ScalaPlugin$ crashes at runtime. Missing dependency?
+    javaProject.setRawClasspath(PreferenceConstants.getDefaultJRELibrary() :+ JavaCore.newContainerEntry(Path.fromPortableString("org.scala-ide.sdt.launching.SCALA_CONTAINER")), monitor)
   }
 
 }
