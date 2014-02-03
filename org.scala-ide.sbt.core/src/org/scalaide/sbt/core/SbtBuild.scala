@@ -26,25 +26,25 @@ import sbt.protocol.ProjectReference
 
 object SbtBuild {
 
-  private var builds = Map[File, Future[SbtBuild]]()
+  private var builds = Map[File, SbtBuild]()
   private val buildsLock = new Object
 
-  def buildFor(buildRoot: File): Future[SbtBuild] = {
+  def buildFor(buildRoot: File): SbtBuild = {
     buildsLock.synchronized {
       builds.get(buildRoot) match {
         case Some(build) =>
           build
         case None =>
-          val client = createSbtClientFor(buildRoot)
-          val build = client.map(SbtBuild(buildRoot, _))
+          //          val client = createSbtClientFor(buildRoot)
+          val build = SbtBuild(buildRoot)
           builds += buildRoot -> build
           build
       }
     }
   }
 
-  private def apply(buildRoot: File, client: SbtClient): SbtBuild = {
-    val build = new SbtBuild(buildRoot, client)
+  private def apply(buildRoot: File): SbtBuild = {
+    val build = new SbtBuild(buildRoot)
     build.init()
     build
   }
@@ -69,53 +69,74 @@ object SbtBuild {
 
 }
 
-class SbtBuild private (buildRoot: File, client: SbtClient) extends HasLogger {
+class SbtBuild private (buildRoot: File) extends HasLogger {
 
-  @volatile private var _build: Option[Future[MinimalBuildStructure]] = None
+  @volatile private var sbtClient: Future[SbtClient] = null
+
+  @volatile private var build: Future[MinimalBuildStructure] = null
   private val buildLock = new Object
 
   private def init() {
+    sbtClient = SbtBuild.createSbtClientFor(buildRoot)
     val console = ConsoleProvider(buildRoot)
     registerEventHandlers(console.newMessageStream())
   }
 
   private def registerEventHandlers(out: MessageConsoleStream): Unit = {
     import sbt.protocol._
-    client handleEvents {
-      case LogEvent(LogSuccess(msg))        => out.println(s"[success] $msg")
-      case LogEvent(LogMessage(level, msg)) => out.println(s"[$level] $msg")
-      case LogEvent(LogStdOut(msg))         => out.println(s"[stdout] $msg")
-      case LogEvent(LogStdErr(msg))         => out.println(s"[stderr] $msg")
-      case m                                => logger.debug("No event handler for " + m)
-    }
-  }
-
-  private def build(): Future[MinimalBuildStructure] =
-    _build.getOrElse {
-      buildLock.synchronized {
-        _build match {
-          case Some(build) =>
-            build
-          case None =>
-            val promise = Promise[MinimalBuildStructure]
-            client.watchBuild {
-              case build: MinimalBuildStructure =>
-                if (promise.isCompleted) {
-                  // if the promise has already been completed, set the value in a new future
-                  _build = Some(Future(build))
-                } else {
-                  promise.success(build)
-                }
-            }
-            _build = Some(promise.future)
-            promise.future
-        }
+    sbtClient.map {
+      _ handleEvents {
+        case LogEvent(LogSuccess(msg))        => out.println(s"[success] $msg")
+        case LogEvent(LogMessage(level, msg)) => out.println(s"[$level] $msg")
+        case LogEvent(LogStdOut(msg))         => out.println(s"[stdout] $msg")
+        case LogEvent(LogStdErr(msg))         => out.println(s"[stderr] $msg")
+        case m                                => logger.debug("No event handler for " + m)
       }
     }
+  }
+  
+  private def fetchBuildStructure = {
+		  val promise = Promise[MinimalBuildStructure]
+    sbtClient.map { client =>
+            client.watchBuild {
+              case b: MinimalBuildStructure =>
+                if (promise.isCompleted) {
+                  // if the promise has already been completed, set the value in a new future
+                  build = Future(b)
+                } else {
+                  promise.success(b)
+                }
+            }
+    }
+		  build = promise.future
+  }
+
+//  private def build(): Future[MinimalBuildStructure] =
+//    _build.getOrElse {
+//      buildLock.synchronized {
+//        _build match {
+//          case Some(build) =>
+//            build
+//          case None =>
+//            val promise = Promise[MinimalBuildStructure]
+//            client.watchBuild {
+//              case build: MinimalBuildStructure =>
+//                if (promise.isCompleted) {
+//                  // if the promise has already been completed, set the value in a new future
+//                  _build = Some(Future(build))
+//                } else {
+//                  promise.success(build)
+//                }
+//            }
+//            _build = Some(promise.future)
+//            promise.future
+//        }
+//      }
+//    }
 
   def compile(project: String) {
     /*TODO: request compilation for the right project*/
-    client.requestExecution("compile")
+    sbtClient.foreach(_.requestExecution("compile"))
   }
 
   def projects(): Future[immutable.Seq[ProjectReference]] = {
