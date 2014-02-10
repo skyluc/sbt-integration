@@ -2,23 +2,20 @@ package org.scalaide.sbt.core
 
 import java.io.File
 import java.util.concurrent.locks.ReentrantReadWriteLock
-
-import scala.collection.immutable
+import scala.collection._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.tools.eclipse.logging.HasLogger
-
 import org.eclipse.core.resources.IProject
 import org.eclipse.ui.console.MessageConsole
 import org.scalaide.sbt.ui.console.ConsoleProvider
-
 import com.typesafe.sbtrc.client.AbstractSbtServerLocator
 import com.typesafe.sbtrc.client.SimpleConnector
-
 import sbt.client.SbtClient
 import sbt.client.Subscription
 import sbt.protocol._
+import sbt.client.SettingKey
 
 object SbtBuild {
 
@@ -64,10 +61,10 @@ object SbtBuild {
 /** Internal data structure containing info around SbtClient.
  */
 case class SbtBuildDataContainer(
-    sbtClient: Future[SbtClient],
-    sbtClientSubscription: Subscription,
-    build: Future[MinimalBuildStructure],
-    subscriptions: List[Subscription])
+  sbtClient: Future[SbtClient],
+  sbtClientSubscription: Subscription,
+  build: Future[MinimalBuildStructure],
+  subscriptions: List[Subscription])
 
 /** Wrapper for the connection to the sbt-server for a sbt build.
  */
@@ -119,7 +116,7 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
   /** Creates or re-create the internal data for the new sbtClient.
    *  Creates new watchers for elements watched on the previous sbtClient.
    *  Connects the events to the console.
-   *  
+   *
    *  To be called inside a writeLock
    */
   private def initData(sbtClient: Future[SbtClient], subscription: Subscription) {
@@ -174,23 +171,23 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
   }
 
   private def withWriteLock[E](f: => E): E = {
-      dataLock.writeLock.lock()
-      try {
-        f
-      } finally {
-        dataLock.writeLock.unlock()
-      }
+    dataLock.writeLock.lock()
+    try {
+      f
+    } finally {
+      dataLock.writeLock.unlock()
+    }
   }
-  
+
   private def withReadLock[E](f: => E): E = {
-      dataLock.readLock.lock()
-      try {
-        f
-      } finally {
-        dataLock.readLock.unlock()
-      }
+    dataLock.readLock.lock()
+    try {
+      f
+    } finally {
+      dataLock.readLock.unlock()
+    }
   }
-  
+
   /** Triggers the compilation of the given project.
    */
   def compile(project: IProject) {
@@ -205,6 +202,30 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
     withReadLock {
       buildData.build.map(_.projects.to[immutable.Seq])
     }
+  }
+
+  def getSettingValue(project: ProjectReference, keyName: String): Future[String] = {
+
+    val aKey: AttributeKey = AttributeKey(keyName, TypeInfo("java.io.File"))
+    val scope: SbtScope = SbtScope(Some(buildRoot.toURI()), Some(project), None, None)
+    val sKey: ScopedKey = ScopedKey(aKey, scope)
+    val key: SettingKey[File] = SettingKey(sKey)
+
+    buildData.sbtClient.flatMap { c =>
+      val promise = Promise[String]
+      c.watch(key) { (a, b) =>
+        b match {
+          case TaskSuccess(value) =>
+            println(s">>>>>>$value")
+            promise.success(value.stringValue)
+          case TaskFailure(msg) =>
+            println(s">>>>>>$msg")
+            promise.failure(new Exception(msg))
+        }
+      }
+      promise.future
+    }
+
   }
 
 }

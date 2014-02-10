@@ -64,9 +64,9 @@ import scala.collection._
 object ProjectsImportPage {
 
   /** */
-  class ProjectRecord(ref: ProjectReference) {
+  class ProjectRecord(val build: SbtBuild, val ref: ProjectReference) {
     /** Location of the sbt build file. */
-    lazy val buildRoot = ref.build.getRawPath()
+    lazy val projectRoot = build.getSettingValue(ref, "baseDirectory")
 
     /** project's name */
     def name: String = ref.name
@@ -106,6 +106,9 @@ object ProjectsImportPage {
       */
     @volatile
     var selectedProjects: Seq[ProjectRecord] = Seq.empty
+    
+    @volatile
+    var selectedRootFolder: Option[File] = None 
 
     /** Projects that can be imported in the workspace without conflicts. */
     def importableProjects(): Seq[ProjectRecord] = {
@@ -338,8 +341,8 @@ class ProjectsImportPage(currentSelection: IStructuredSelection) extends WizardD
           if (directory.isDirectory()) {
             monitor.worked(50)
             monitor.subTask(DataTransferMessages.WizardProjectsImportPage_ProcessingMessage)
-            val projects = collectProjectsReferencesFromDirectory(directory, monitor)
-            model.selectedProjects = projects.map(ref => new ProjectRecord(ref))
+            val projects = collectProjectRecordsFromDirectory(directory, monitor)
+            model.selectedProjects = projects
           }
           else monitor.worked(60)
           monitor.done()
@@ -374,15 +377,19 @@ class ProjectsImportPage(currentSelection: IStructuredSelection) extends WizardD
 
   }
 
-  private def collectProjectsReferencesFromDirectory(directory: File, monitor: IProgressMonitor): Seq[ProjectReference] = {
+  private def collectProjectRecordsFromDirectory(directory: File, monitor: IProgressMonitor): Seq[ProjectRecord] = {
     if (!monitor.isCanceled()) {
       monitor.subTask(NLS.bind(DataTransferMessages.WizardProjectsImportPage_CheckingMessage, directory.getPath()))
       val promise = Promise[Seq[ProjectReference]]
 
       import scala.concurrent.ExecutionContext.Implicits.global
 
-      val projects = SbtBuild.buildFor(directory).projects()
-      Await.result(projects, scala.concurrent.duration.Duration.Inf)
+      val build = SbtBuild.buildFor(directory)
+      val projects = build.projects()
+      val projectRecords = projects.map {
+        _.map(new ProjectRecord(build, _))
+      }
+      Await.result(projectRecords, scala.concurrent.duration.Duration.Inf)
     } else {
       Seq.empty
     }
@@ -452,7 +459,8 @@ class ProjectsImportPage(currentSelection: IStructuredSelection) extends WizardD
     val description = workspace.newProjectDescription(project.name)
 
     // TODO: this is wrong, it should be the project root, but we need to get the info through settings
-    description.setLocation(new Path(project.buildRoot))
+    project.projectRoot
+    description.setLocation(new Path(project.ref.build.getRawPath()))
 
     description.setNatureIds(Array("org.scala-ide.sdt.core.scalanature", "org.eclipse.jdt.core.javanature"))
 
