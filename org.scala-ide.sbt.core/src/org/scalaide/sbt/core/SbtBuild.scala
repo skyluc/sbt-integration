@@ -204,27 +204,59 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
     }
   }
 
-  def getSettingValue(project: ProjectReference, keyName: String): Future[String] = {
-
-    val aKey: AttributeKey = AttributeKey(keyName, TypeInfo("java.io.File"))
-    val scope: SbtScope = SbtScope(Some(buildRoot.toURI()), Some(project), None, None)
-    val sKey: ScopedKey = ScopedKey(aKey, scope)
-    val key: SettingKey[File] = SettingKey(sKey)
-
-    buildData.sbtClient.flatMap { c =>
-      val promise = Promise[String]
-      c.watch(key) { (a, b) =>
-        b match {
-          case TaskSuccess(value) =>
-            println(s">>>>>>$value")
-            promise.success(value.stringValue)
-          case TaskFailure(msg) =>
-            println(s">>>>>>$msg")
-            promise.failure(new Exception(msg))
-        }
-      }
-      promise.future
+  private def projectReference(projectName: String): Future[Option[ProjectReference]] = {
+    projects.map {
+      _.find(_.name == projectName)
     }
+  }
+
+  private def sbtClient = withReadLock {
+    buildData.sbtClient
+  }
+
+  def getSettingValue[T](projectName: String, keyName: String, config: Option[String])(implicit mf: Manifest[T]): Future[T] = {
+
+    projectReference(projectName).flatMap { project =>
+      sbtClient.flatMap { client =>
+        val aKey: AttributeKey = AttributeKey(keyName, TypeInfo.fromManifest(mf))
+        val scope: SbtScope = SbtScope(Some(buildRoot.toURI()), project /*TODO: not good, different option meaning*/ , config, None)
+        val sKey: ScopedKey = ScopedKey(aKey, scope)
+        val key: SettingKey[T] = SettingKey(sKey)
+
+        val promise = Promise[T]
+        client.watch(key) { (a, b) =>
+          b match {
+            case TaskSuccess(value) =>
+              println(s">>>>>>$value")
+              promise.success(value.value.get) // TODO: get ...
+            case TaskFailure(msg) =>
+              println(s">>>>>>$msg")
+              promise.failure(new Exception(msg))
+          }
+        }
+        promise.future
+      }
+    }
+
+    //    val aKey: AttributeKey = AttributeKey(keyName, TypeInfo("java.io.File"))
+    //    val scope: SbtScope = SbtScope(Some(buildRoot.toURI()), Some(project), None, None)
+    //    val sKey: ScopedKey = ScopedKey(aKey, scope)
+    //    val key: SettingKey[File] = SettingKey(sKey)
+    //
+    //    buildData.sbtClient.flatMap { c =>
+    //      val promise = Promise[String]
+    //      c.watch(key) { (a, b) =>
+    //        b match {
+    //          case TaskSuccess(value) =>
+    //            println(s">>>>>>$value")
+    //            promise.success(value.stringValue)
+    //          case TaskFailure(msg) =>
+    //            println(s">>>>>>$msg")
+    //            promise.failure(new Exception(msg))
+    //        }
+    //      }
+    //      promise.future
+    //    }
 
   }
 
