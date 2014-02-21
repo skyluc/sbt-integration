@@ -86,9 +86,7 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
     // the function passed to onConnect is called everytime the connection with
     // sbt-server is (re)established.
     val subscription = connector.onConnect { sbtClient =>
-      if (!promise.isCompleted) {
-        promise.success(sbtClient)
-      } else {
+      if (!promise.trySuccess(sbtClient)) {
         withWriteLock {
           newSbtClient(sbtClient)
         }
@@ -133,9 +131,7 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
     sbtClient.map { sc =>
       val subscription = sc.watchBuild {
         case b: MinimalBuildStructure =>
-          if (!promise.isCompleted) {
-            promise.success(b)
-          } else {
+          if (!promise.trySuccess(b)) {
             withWriteLock {
               buildData = buildData.copy(build = Future(b))
             }
