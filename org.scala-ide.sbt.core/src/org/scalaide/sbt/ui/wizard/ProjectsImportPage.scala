@@ -56,21 +56,25 @@ import org.scalaide.sbt.core.SbtBuild
 import org.eclipse.core.resources.IResource
 import org.eclipse.core.resources.IProjectDescription
 import org.eclipse.core.resources.IWorkspace
-import scala.tools.eclipse.ScalaPlugin
 import org.eclipse.jdt.ui.PreferenceConstants
 import org.eclipse.jdt.core.JavaCore
 import scala.collection._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.Future
+import org.eclipse.jdt.internal.core.ClasspathEntry
+import sbt.Attributed
 
 object ProjectsImportPage {
 
   /** */
   class ProjectRecord(val build: SbtBuild, val ref: ProjectReference) {
     /** Location of the sbt build file. */
-    lazy val projectRoot = build.getSettingValue(ref, "baseDirectory")
+    lazy val projectRoot = build.getSettingValue[File](ref.name, "baseDirectory")
 
     /** project's name */
     def name: String = ref.name
-
+    
     /** true if the project cannot be safely imported in Eclipse, e.g., name collision with an already imported project */
     @volatile
     var hasConflicts: Boolean = false
@@ -451,14 +455,24 @@ class ProjectsImportPage(currentSelection: IStructuredSelection) extends WizardD
     val project = workspace.getRoot().getProject(projectName)
     project.create(configureProjectDescription(record, workspace), IResource.NONE, monitor)
     project.open(monitor)
-    configureProject(project, monitor)
+    configureProject(project, record, monitor)
     project
+  }
+  
+  def getSettings[T](project: ProjectRecord, settingName: String, config: Option[String])(implicit m: Manifest[T]): Future[T] = {
+    project.build.getSettingValue[T](project.name, settingName, config)
+  }
+
+  def getTasks[T](project: ProjectRecord, taskName: String, config: Option[String])(implicit m: Manifest[T]): Future[T] = {
+    project.build.getTaskValue[T](project.name, taskName, config)
   }
 
   def configureProjectDescription(project: ProjectRecord, workspace: IWorkspace): IProjectDescription = {
+    val f = for {
+      projectRoot <- project.projectRoot
+    } yield {
     val description = workspace.newProjectDescription(project.name)
 
-    // TODO: this is wrong, it should be the project root, but we need to get the info through settings
     project.projectRoot
     description.setLocation(new Path(project.ref.build.getRawPath()))
 
@@ -469,12 +483,58 @@ class ProjectsImportPage(currentSelection: IStructuredSelection) extends WizardD
     description.setBuildSpec(Array(newBuilderCommand))
 
     description
+    }
+    
+    Await.result(f, 2.seconds)
   }
+  
+  val ScalaLibraryRegex = ".*org\\.scala-lang/scala-library.*".r
+  val ScalaCompilerRegex = ".*org\\.scala-lang/scala-compiler.*".r
+  val ScalaReflectRegex = ".*org\\.scala-reflect.*".r
 
-  def configureProject(project: IProject, monitor: IProgressMonitor) {
-    val javaProject = JavaCore.create(project)
-    // For some reason, using ScalaPlugin$ crashes at runtime. Missing dependency?
-    javaProject.setRawClasspath(PreferenceConstants.getDefaultJRELibrary() :+ JavaCore.newContainerEntry(Path.fromPortableString("org.scala-ide.sdt.launching.SCALA_CONTAINER")), monitor)
+  def configureProject(project: IProject, projectRecord: ProjectRecord, monitor: IProgressMonitor) {
+    val f = for {
+      compileSourceDirectories <- getSettings[Seq[File]](projectRecord, "sourceDirectories", Some("compile"))
+      compileClassDirectory <- getSettings[File](projectRecord, "classDirectory", Some("compile"))
+      compileClassPath <- getTasks[scala.collection.Seq[Attributed[File]]](projectRecord, "externalDependencyClasspath", Some("compile"))
+      testSourceDirectories <- getSettings[Seq[File]](projectRecord, "sourceDirectories", Some("test"))
+      testClassDirectory <- getSettings[File](projectRecord, "classDirectory", Some("test"))
+      testClassPath <- getTasks[scala.collection.Seq[Attributed[File]]](projectRecord, "externalDependencyClasspath", Some("test"))
+    } yield {
+      val javaProject = JavaCore.create(project)
+      // For some reason, using ScalaPlugin$ crashes at runtime. Missing dependency?
+      
+      val sourcePaths = compileSourceDirectories.filter{_.exists()}.map{ d =>
+        JavaCore.newSourceEntry(pathInProject(project, d), ClasspathEntry.EXCLUDE_NONE, pathInProject(project, compileClassDirectory))
+      }
+      
+      val testSourcePaths = testSourceDirectories.filter{_.exists()}.map{ d =>
+        JavaCore.newSourceEntry(pathInProject(project, d), ClasspathEntry.EXCLUDE_NONE, pathInProject(project, testClassDirectory))
+      }
+      
+      val fullClasspath = (compileClassPath ++ testClassPath).distinct
+      val referencedJars = fullClasspath.map { f => convertToEclipseClasspathEntry(f.data) }
+      
+      val classPath = sourcePaths ++ testSourcePaths ++ referencedJars ++ PreferenceConstants.getDefaultJRELibrary()
+      
+      javaProject.setRawClasspath(classPath.toArray, monitor)
+    }
+    
+    Await.result(f, 20.seconds)
+  }
+  
+  def convertToEclipseClasspathEntry(file: File) = {
+    val path = file.toURI().getPath()
+    path match {
+      case ScalaLibraryRegex() =>
+        JavaCore.newContainerEntry(Path.fromPortableString("org.scala-ide.sdt.launching.SCALA_CONTAINER"))
+      case _ =>
+        JavaCore.newLibraryEntry(Path.fromOSString(path), null, null)
+    }
+  }
+  
+  def pathInProject(project: IProject, file: File) = {
+    project.getFullPath().append(Path.fromOSString(file.toURI().getPath()).makeRelativeTo(project.getLocation()))
   }
 
 }

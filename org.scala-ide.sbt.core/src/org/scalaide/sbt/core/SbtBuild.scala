@@ -6,8 +6,8 @@ import scala.collection._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.Promise
-import scala.tools.eclipse.logging.HasLogger
 import org.eclipse.core.resources.IProject
+import org.scalaide.logging.HasLogger
 import org.eclipse.ui.console.MessageConsole
 import org.scalaide.sbt.ui.console.ConsoleProvider
 import com.typesafe.sbtrc.client.AbstractSbtServerLocator
@@ -16,6 +16,7 @@ import sbt.client.SbtClient
 import sbt.client.Subscription
 import sbt.protocol._
 import sbt.client.SettingKey
+import sbt.client.TaskKey
 
 object SbtBuild {
 
@@ -210,7 +211,7 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
     buildData.sbtClient
   }
 
-  def getSettingValue[T](projectName: String, keyName: String, config: Option[String])(implicit mf: Manifest[T]): Future[T] = {
+  def getSettingValue[T](projectName: String, keyName: String, config: Option[String] = None)(implicit mf: Manifest[T]): Future[T] = {
 
     projectReference(projectName).flatMap { project =>
       sbtClient.flatMap { client =>
@@ -223,37 +224,40 @@ class SbtBuild private (buildRoot: File, console: MessageConsole) extends HasLog
         client.watch(key) { (a, b) =>
           b match {
             case TaskSuccess(value) =>
-              println(s">>>>>>$value")
+              println(s">>>>>> $sKey : $value")
               promise.success(value.value.get) // TODO: get ...
             case TaskFailure(msg) =>
-              println(s">>>>>>$msg")
+              println(s">>>>>> $sKey : $msg")
               promise.failure(new Exception(msg))
           }
         }
         promise.future
       }
     }
+  }
+  
+  def getTaskValue[T](projectName: String, keyName: String, config: Option[String] = None)(implicit mf: Manifest[T]): Future[T] = {
+        projectReference(projectName).flatMap { project =>
+      sbtClient.flatMap { client =>
+        val aKey: AttributeKey = AttributeKey(keyName, TypeInfo.fromManifest(mf))
+        val scope: SbtScope = SbtScope(Some(buildRoot.toURI()), project /*TODO: not good, different option meaning*/ , config, None)
+        val sKey: ScopedKey = ScopedKey(aKey, scope)
+        val key: TaskKey[T] = TaskKey(sKey)
 
-    //    val aKey: AttributeKey = AttributeKey(keyName, TypeInfo("java.io.File"))
-    //    val scope: SbtScope = SbtScope(Some(buildRoot.toURI()), Some(project), None, None)
-    //    val sKey: ScopedKey = ScopedKey(aKey, scope)
-    //    val key: SettingKey[File] = SettingKey(sKey)
-    //
-    //    buildData.sbtClient.flatMap { c =>
-    //      val promise = Promise[String]
-    //      c.watch(key) { (a, b) =>
-    //        b match {
-    //          case TaskSuccess(value) =>
-    //            println(s">>>>>>$value")
-    //            promise.success(value.stringValue)
-    //          case TaskFailure(msg) =>
-    //            println(s">>>>>>$msg")
-    //            promise.failure(new Exception(msg))
-    //        }
-    //      }
-    //      promise.future
-    //    }
-
+        val promise = Promise[T]
+        client.watch(key) { (a, b) =>
+          b match {
+            case TaskSuccess(value) =>
+              println(s">>>>>> $sKey : $value")
+              promise.success(value.value.get) // TODO: get ...
+            case TaskFailure(msg) =>
+              println(s">>>>>> $sKey : $msg")
+              promise.failure(new Exception(msg))
+          }
+        }
+        promise.future
+      }
+    }
   }
 
 }
