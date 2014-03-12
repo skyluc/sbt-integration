@@ -6,20 +6,20 @@
 	<classpathentry exported="true" kind="lib" path="target/lib/collections.jar"/>
 	<classpathentry exported="true" kind="lib" path="target/lib/interface.jar"/>
 	<classpathentry exported="true" kind="lib" path="target/lib/launcher-interface.jar"/>
-	<classpathentry kind="lib" path="target/lib/io.jar"/>
-	<classpathentry kind="lib" path="target/lib/rxjava-core.jar"/>
-	<classpathentry kind="lib" path="target/lib/rxjava-scala.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/io.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/rxjava-core.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/rxjava-scala.jar"/>
 	<classpathentry kind="con" path="org.eclipse.pde.core.requiredPlugins"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
-	<classpathentry kind="lib" path="target/lib/akka-actor_2.10.jar"/>
-	<classpathentry kind="lib" path="target/lib/jackson-annotations.jar"/>
-	<classpathentry kind="lib" path="target/lib/jackson-core.jar"/>
-	<classpathentry kind="lib" path="target/lib/jackson-databind.jar"/>
-	<classpathentry kind="lib" path="target/lib/joda-time.jar"/>
-	<classpathentry kind="lib" path="target/lib/play-datacommons_2.10.jar"/>
-	<classpathentry kind="lib" path="target/lib/play-functional_2.10.jar"/>
-	<classpathentry kind="lib" path="target/lib/play-iteratees_2.10.jar"/>
-	<classpathentry kind="lib" path="target/lib/play-json_2.10.jar"/>
-	<classpathentry kind="lib" path="target/lib/scala-stm_2.10.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/akka-actor_2.10.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/jackson-annotations.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/jackson-core.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/jackson-databind.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/joda-time.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/play-datacommons_2.10.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/play-functional_2.10.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/play-iteratees_2.10.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/play-json_2.10.jar"/>
+	<classpathentry exported="true" kind="lib" path="target/lib/scala-stm_2.10.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>

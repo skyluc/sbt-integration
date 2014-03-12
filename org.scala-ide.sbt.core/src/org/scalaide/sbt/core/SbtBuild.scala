@@ -68,12 +68,14 @@ object SbtBuild {
 
 /** Wrapper for the connection to the sbt-server for a sbt build.
  */
-class SbtBuild private (val buildRoot: File, sbtClient_ : Observable[SbtClient], console: MessageConsole) extends HasLogger {
+class SbtBuild private[core] (val buildRoot: File, sbtClient_ : Observable[SbtClient], console: MessageConsole) extends HasLogger {
 
   val sbtClientObservable = ObservableExt.replay(sbtClient_.map{s => println("mapping sbtClient"); new SbtClientWithObservableAndCache(s)}, 1)
 
   def sbtClientFuture = ObservableExt.firstFuture(sbtClientObservable)
   
+  // FIXME: tempory hack to get the tests going. console should not be part of the class paramters, and its configuration done somewhere else
+  if (console != null) {
   sbtClientObservable.subscribe{ sbtClient => 
     val out = console.newMessageStream()
     sbtClient.eventWatcher.subscribe {
@@ -85,6 +87,7 @@ class SbtBuild private (val buildRoot: File, sbtClient_ : Observable[SbtClient],
         case m => logger.debug("No event handler for " + m)
       }
     }
+  }
   }
 
   /** Triggers the compilation of the given project.
